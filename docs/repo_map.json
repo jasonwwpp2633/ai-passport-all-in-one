@@ -716,6 +716,82 @@
         ],
         "unsampled_paths": []
       }
+    },
+    {
+      "id": "interactive_simulator",
+      "name": "interactive_simulator",
+      "path": "scripts/passport_simulator.py",
+      "kind": "development_tool",
+      "purpose": "macOS 原生交互窗口，通过本地 UART socket 操作 ESP32-C3 虚拟固件，展示实际 LVGL 像素；使用独立交互入口和构建目录。",
+      "module_tags": [
+        "simulator",
+        "macos",
+        "lvgl",
+        "development"
+      ],
+      "entry_files": [
+        "scripts/passport_simulator.py",
+        "firmware/passport_suite/main/interactive_main.cpp"
+      ],
+      "key_symbols": [
+        "Simulator",
+        "smoke",
+        "window",
+        "app_main"
+      ],
+      "child_modules": [],
+      "first_read_files": [
+        "docs/interactive-simulator.md",
+        "scripts/passport_simulator.py",
+        "firmware/passport_suite/main/interactive_main.cpp"
+      ],
+      "then_check_files": [
+        "firmware/passport_suite/main/suite.cpp",
+        "firmware/passport_suite/main/ui.cpp"
+      ],
+      "upstream_dependencies": [],
+      "downstream_dependencies": [],
+      "out_of_scope_dependencies": [
+        "physical audio and radio hardware",
+        "cloud voice services"
+      ],
+      "related_tests": [
+        "scripts/passport_simulator.py"
+      ],
+      "related_configs": [
+        "firmware/passport_suite/main/CMakeLists.txt",
+        "scripts/build_passport_suite.sh",
+        ".gitignore"
+      ],
+      "risk_flags": [
+        "demo_weather_and_battery",
+        "session_only_virtual_settings",
+        "macos_gui_required",
+        "does_not_test_button_debounce"
+      ],
+      "edit_risk": "medium",
+      "blast_radius": [
+        "interactive simulator only; default regression entry point remains sim_main.cpp"
+      ],
+      "pitfall_ids": [],
+      "minimum_regression": [
+        "env SIM_INTERACTIVE=1 bash scripts/build_passport_suite.sh",
+        ".venv/bin/python scripts/passport_simulator.py --smoke"
+      ],
+      "routing_confidence": "high",
+      "scope_flags": [
+        "subtree_only",
+        "emulator_and_gui_evidence"
+      ],
+      "grounding": {
+        "fact_status": "grounded",
+        "evidence": [
+          "scripts/passport_simulator.py",
+          "firmware/passport_suite/main/interactive_main.cpp",
+          "docs/interactive-simulator.md"
+        ],
+        "unsampled_paths": []
+      }
     }
   ]
 }

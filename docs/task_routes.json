@@ -307,6 +307,37 @@
         "subtree_only",
         "host_and_emulator_evidence"
       ]
+    },
+    {
+      "id": "R08",
+      "task_type": "interactive_simulator",
+      "match_keywords": [
+        "交互仿真",
+        "模拟器窗口",
+        "passport_simulator",
+        "interactive_main",
+        "SIM_INTERACTIVE"
+      ],
+      "negative_keywords": [],
+      "route_priority": 85,
+      "first_read_modules": [
+        "interactive_simulator"
+      ],
+      "expand_to_modules": [],
+      "pitfall_ids": [],
+      "expand_search_codes": [
+        "read_reference_map_first"
+      ],
+      "stop_and_verify_codes": [
+        "run_minimum_regression"
+      ],
+      "fact_check_codes": [
+        "read_reference_map_first"
+      ],
+      "scope_flags": [
+        "subtree_only",
+        "emulator_and_gui_evidence"
+      ]
     }
   ]
 }

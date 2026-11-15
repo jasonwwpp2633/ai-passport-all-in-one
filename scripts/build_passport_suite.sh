@@ -39,6 +39,10 @@ if "$FONT_PYTHON" -c "import PIL" 2>/dev/null; then "$FONT_PYTHON" "$ROOT/script
 # SIM_ENGLISH=1: the simulator in English, built apart in build-en (scripts/test_passport_menu_sim.py --english).
 BUILD_DIR=build;BUILD_ARGS=()
 if [[ "${SIM_ENGLISH:-}" == 1 ]]; then BUILD_DIR=build-en;BUILD_ARGS=(-B build-en -DPASSPORT_SIM_ENGLISH=1); fi
+if [[ "${SIM_INTERACTIVE:-}" == 1 ]]; then
+  [[ -z "${1:-}" && "${SIM_ENGLISH:-}" != 1 ]] || { echo "SIM_INTERACTIVE requires the default simulator target" >&2; exit 1; }
+  BUILD_DIR=build-interactive;BUILD_ARGS=(-B build-interactive -DPASSPORT_SIM_INTERACTIVE=1)
+fi
 python "$IDF_PATH/tools/idf.py" ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"} -DIDF_TARGET=esp32c3 build
 python "$IDF_PATH/tools/idf.py" ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"} merge-bin -o merged_flash.bin
 # 语音唤醒's model, written by flash_passport_device.py to the free flash after the identity card.

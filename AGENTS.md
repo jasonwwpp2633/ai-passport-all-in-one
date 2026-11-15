@@ -1,6 +1,17 @@
 直接简要, 人类友好的回复.
 不要返回给我长篇大论。
 
+## Fork 分支与同步流程
+
+- `origin` 指向用户的 Fork：`https://github.com/jasonwwpp2633/ai-passport-all-in-one.git`。
+- `upstream` 指向原作者仓库：`https://github.com/KevinCJM/ai-passport-all-in-one.git`。
+- `main` 作为原作者代码的同步分支，保持与 `origin/main` 一致；仅同步上游更新，不直接提交定制改动。
+- `my-custom` 是长期定制开发分支，跟踪 `origin/my-custom`；所有个人功能、修复和项目规则改动均在此分支进行。
+- 开始修改前检查当前分支和工作区；在 `my-custom` 上开发，切换分支前妥善保留未提交改动。
+- 同步原作者更新时，依次执行：获取 `origin` 和 `upstream` 更新；将 `main` 快进到 `upstream/main`；推送 `main` 到 `origin`；切回 `my-custom` 并合并 `main`。
+- 若 `main` 与远程分支发生分叉，先检查原因并保留现有提交，不用强制推送或硬重置覆盖历史。
+- 合并到 `my-custom` 后处理冲突，运行受影响模块的检查与测试；通过后再推送 `my-custom` 到 `origin`。
+
 <!-- CODEGRAPH_START -->
 ## CodeGraph
 
