@@ -338,6 +338,53 @@
         "subtree_only",
         "emulator_and_gui_evidence"
       ]
+    },
+    {
+      "id": "R09",
+      "task_type": "hermes_assistant_feature",
+      "match_keywords": [
+        "Hermes助手",
+        "Hermes 聊天",
+        "Hermes聊天",
+        "passport_hermes",
+        "hermes-assistant",
+        "HermesView",
+        "Hermes外网",
+        "Hermes远程",
+        "远程Hermes",
+        "Hermes WiFi",
+        "passport_hermes_remote",
+        "passport_hermes_client",
+        "Hermes 热点",
+        "iPhone热点",
+        "hermes_remote.hpp",
+        "hermes_storage",
+        "hermes_services"
+      ],
+      "negative_keywords": [],
+      "route_priority": 110,
+      "first_read_modules": [
+        "hermes_assistant",
+        "hermes_remote"
+      ],
+      "expand_to_modules": [],
+      "pitfall_ids": [
+        "P08",
+        "P09"
+      ],
+      "expand_search_codes": [
+        "read_reference_map_first"
+      ],
+      "stop_and_verify_codes": [
+        "run_minimum_regression"
+      ],
+      "fact_check_codes": [
+        "read_reference_map_first"
+      ],
+      "scope_flags": [
+        "subtree_only",
+        "host_emulator_and_firmware_build_evidence"
+      ]
     }
   ]
 }

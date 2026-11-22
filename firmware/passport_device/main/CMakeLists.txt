@@ -7,7 +7,7 @@ idf_component_register(SRCS "board.cpp" "codec_memory.cpp" "${LIVE}/main.cpp" "$
 target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_20)
 target_sources(${COMPONENT_LIB} PRIVATE "${LIVE}/menu_service.cpp")
 target_add_binary_data(${COMPONENT_LIB} "${CMAKE_CURRENT_LIST_DIR}/../../../scripts/passport_menu.js" TEXT)
-target_sources(${COMPONENT_LIB} PRIVATE "tool_tasks.cpp" "wifi_portal.cpp" "native_services.cpp" "macro_services.cpp" "crash_trace.cpp" "nothrow_alloc.cpp" "pcm_playback.cpp" "ble_companion.cpp" "ble_slides.cpp" "${SUITE}/home_ui.cpp" "${SUITE}/status_bar.cpp" "${SUITE}/identity.cpp")
+target_sources(${COMPONENT_LIB} PRIVATE "tool_tasks.cpp" "wifi_portal.cpp" "native_services.cpp" "hermes_remote.cpp" "hermes_storage.cpp" "hermes_services.cpp" "macro_services.cpp" "crash_trace.cpp" "nothrow_alloc.cpp" "pcm_playback.cpp" "ble_companion.cpp" "ble_slides.cpp" "${SUITE}/home_ui.cpp" "${SUITE}/status_bar.cpp" "${SUITE}/identity.cpp")
 target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_panic_handler")
 # codec_memory.cpp replaces esp_audio_codec's weak allocators; nothing else references it, so pull it in.
 target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,-u,media_lib_module_malloc")

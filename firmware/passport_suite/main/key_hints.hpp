@@ -5,6 +5,7 @@ namespace passport {
 inline const char* keyHint(App app,SettingsPage page,bool focusRunning,bool pairing,bool loading,bool error,bool alt=false,unsigned tab=0){
     if(pairing)return "确认：允许配对  |  长按确认：取消";
     if(app==App::Home)return "上下：切换  |  确认：功能列表  |  长按确认：息屏";
+    if(app==App::Hermes)return tab==1?"确认：结束说话":tab==2?"正在识别，请稍候":alt?"确认：说话 | 上下：滚动 | 长按上：新对话 | 长按下：续页 | 长按确认：返回":"确认：说话 | 上下：滚动 | 长按上：新对话 | 长按下：远程配置 | 长按确认：返回";
     if(app==App::Menu)return "上下：选择 | 长按上下：翻页 | 确认：进入";
     if(app==App::Settings){
         if(page==SettingsPage::List)return "上下：选择  |  确认：进入  |  长按确认：返回";

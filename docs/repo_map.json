@@ -792,6 +792,252 @@
         ],
         "unsampled_paths": []
       }
+    },
+    {
+      "id": "hermes_assistant",
+      "name": "Hermes助手",
+      "path": "scripts/passport_hermes.py",
+      "kind": "firmware_and_companion_feature",
+      "purpose": "胸牌及交互模拟器通过本机 Hermes CLI 的 stream-json/独立 session 对话、续聊并提交任务；原生语音识别沿用小智，回复有界且可滚动。",
+      "module_tags": [
+        "hermes",
+        "chat",
+        "tasks",
+        "companion",
+        "simulator"
+      ],
+      "entry_files": [
+        "docs/hermes-assistant.md",
+        "scripts/passport_hermes.py",
+        "firmware/passport_suite/main/hermes.hpp"
+      ],
+      "key_symbols": [
+        "HermesAssistant",
+        "Runtime::hermesMessage",
+        "drawHermes",
+        "LiveServices::action"
+      ],
+      "child_modules": [
+        "hermes_remote"
+      ],
+      "first_read_files": [
+        "docs/hermes-assistant.md",
+        "scripts/passport_hermes.py",
+        "firmware/passport_suite/main/hermes.hpp"
+      ],
+      "then_check_files": [
+        "scripts/passport_services.py",
+        "scripts/passport_simulator.py",
+        "scripts/test_passport_hermes_sim.py",
+        "firmware/passport_suite/main/hermes.hpp",
+        "firmware/passport_suite/main/apps.hpp",
+        "firmware/passport_suite/main/suite.hpp",
+        "firmware/passport_suite/main/suite.cpp",
+        "firmware/passport_suite/main/ui.cpp",
+        "firmware/passport_suite/main/key_hints.hpp",
+        "firmware/passport_suite/main/interactive_main.cpp",
+        "firmware/passport_connectivity/main/live_services.cpp"
+      ],
+      "upstream_dependencies": [
+        "computer_assistant",
+        "interactive_simulator"
+      ],
+      "downstream_dependencies": [],
+      "out_of_scope_dependencies": [
+        "Hermes gateway internals and task tool approvals",
+        "physical microphone and USB/BLE/WiFi validation"
+      ],
+      "related_tests": [
+        "tests/test_passport_hermes.py",
+        "tests/test_passport_menu.py",
+        "scripts/test_passport_hermes_sim.py"
+      ],
+      "related_configs": [
+        "firmware/passport_suite/main/CMakeLists.txt",
+        "firmware/passport_suite/CMakeLists.txt",
+        "scripts/build_passport_suite.sh"
+      ],
+      "risk_flags": [
+        "unknown_task_status_after_timeout",
+        "utf8_and_json_queue_limit",
+        "stale_generation_reply",
+        "native_voice_temporarily_disconnects_ble"
+      ],
+      "edit_risk": "high",
+      "blast_radius": [
+        "Hermes page",
+        "companion routing",
+        "interactive UART bridge",
+        "shared app catalog"
+      ],
+      "pitfall_ids": [
+        "P08"
+      ],
+      "minimum_regression": [
+        ".venv/bin/python tests/test_passport_hermes.py -v",
+        ".venv/bin/python tests/test_passport_menu.py -v",
+        "env SIM_INTERACTIVE=1 bash scripts/build_passport_suite.sh",
+        "bash scripts/build_passport_suite.sh device"
+      ],
+      "routing_confidence": "high",
+      "scope_flags": [
+        "subtree_only",
+        "emulator_evidence_only"
+      ],
+      "grounding": {
+        "fact_status": "grounded",
+        "evidence": [
+          "docs/hermes-assistant.md",
+          "scripts/passport_hermes.py",
+          "scripts/passport_services.py",
+          "scripts/passport_simulator.py",
+          "scripts/test_passport_hermes_sim.py",
+          "firmware/passport_suite/main/hermes.hpp",
+          "firmware/passport_suite/main/apps.hpp",
+          "firmware/passport_suite/main/suite.hpp",
+          "firmware/passport_suite/main/suite.cpp",
+          "firmware/passport_suite/main/ui.cpp",
+          "firmware/passport_suite/main/key_hints.hpp",
+          "firmware/passport_suite/main/interactive_main.cpp",
+          "firmware/passport_connectivity/main/live_services.cpp",
+          "tests/test_passport_hermes.py"
+        ],
+        "unsampled_paths": []
+      }
+    },
+    {
+      "id": "hermes_remote",
+      "name": "Hermes远程设备接口",
+      "path": "scripts/passport_hermes_remote.py",
+      "kind": "device_gateway_and_simulator_transport",
+      "purpose": "设备令牌认证的HTTP网关、模拟器客户端与原生ESP32 HTTPS状态机；独立NVS配置/任务记录、语音结束后串行联网、未知结果只查询；物理固件构建与宿主故障验证通过，iPhone热点/TLS内存待实机验收。",
+      "module_tags": [
+        "hermes",
+        "remote",
+        "http",
+        "idempotency",
+        "tailscale"
+      ],
+      "entry_files": [
+        "scripts/passport_hermes_remote.py",
+        "scripts/passport_hermes_client.py",
+        "docs/hermes-assistant.md"
+      ],
+      "key_symbols": [
+        "TaskStore",
+        "DeviceServer",
+        "RunsBackend",
+        "CliBackend",
+        "RemoteHermes",
+        "HermesRemote",
+        "hermesWriteConfig",
+        "hermesWriteTask",
+        "hermesResolveTask",
+        "NativeServices::hermes",
+        "LiveServices::remoteHermes"
+      ],
+      "child_modules": [],
+      "first_read_files": [
+        "docs/hermes-assistant.md",
+        "scripts/passport_hermes_remote.py",
+        "scripts/passport_hermes_client.py"
+      ],
+      "then_check_files": [
+        "scripts/passport_simulator.py",
+        "scripts/test_passport_hermes_sim.py",
+        "scripts/passport_hermes.py",
+        "firmware/passport_device/main/hermes_remote.hpp",
+        "firmware/passport_device/main/hermes_remote.cpp",
+        "firmware/passport_device/main/hermes_storage.cpp",
+        "firmware/passport_device/main/hermes_services.cpp",
+        "firmware/passport_device/main/native_services.cpp",
+        "firmware/passport_device/main/native_services.hpp",
+        "firmware/passport_device/main/wifi_portal.cpp",
+        "firmware/passport_device/main/wifi_portal.hpp",
+        "firmware/passport_device/main/wifi_portal_page.hpp",
+        "firmware/passport_connectivity/main/live_services.cpp",
+        "firmware/passport_connectivity/main/live_services.hpp",
+        "firmware/passport_connectivity/main/main.cpp",
+        "firmware/passport_suite/main/suite.hpp",
+        "firmware/passport_suite/main/suite.cpp",
+        "firmware/passport_suite/main/ui.cpp",
+        "firmware/passport_suite/main/key_hints.hpp",
+        "firmware/passport_suite/main/interactive_main.cpp"
+      ],
+      "upstream_dependencies": [
+        "hermes_assistant",
+        "interactive_simulator"
+      ],
+      "downstream_dependencies": [],
+      "out_of_scope_dependencies": [
+        "Tailscale account approval and running services",
+        "Hermes API Server activation and actual API execution",
+        "physical iPhone hotspot, microphone, TLS heap and battery validation"
+      ],
+      "related_tests": [
+        "tests/test_passport_hermes_remote.py",
+        "scripts/test_passport_hermes_sim.py",
+        "tests/test_passport_hermes_firmware.py",
+        "scripts/test_passport_hermes_portal.mjs"
+      ],
+      "related_configs": [
+        ".gitignore",
+        "firmware/passport_device/main/CMakeLists.txt",
+        "firmware/passport_suite/i18n/portal-en.json"
+      ],
+      "risk_flags": [
+        "unknown_submission_outcome",
+        "api_cli_session_boundary",
+        "private_device_credential",
+        "simulator_http_is_not_esp32_wifi"
+      ],
+      "edit_risk": "high",
+      "blast_radius": [
+        "device HTTP gateway",
+        "remote simulator sessions",
+        "task deduplication and bounded reply pages"
+      ],
+      "pitfall_ids": [
+        "P08",
+        "P09"
+      ],
+      "minimum_regression": [
+        ".venv/bin/python tests/test_passport_hermes_remote.py -v",
+        ".venv/bin/python tests/test_passport_hermes.py -v",
+        ".venv/bin/python tests/test_passport_hermes_firmware.py -v",
+        "node scripts/test_passport_hermes_portal.mjs",
+        "bash scripts/build_passport_suite.sh device"
+      ],
+      "routing_confidence": "high",
+      "scope_flags": [
+        "subtree_only",
+        "host_and_emulator_evidence"
+      ],
+      "grounding": {
+        "fact_status": "grounded",
+        "evidence": [
+          "scripts/passport_hermes_remote.py",
+          "scripts/passport_hermes_client.py",
+          "tests/test_passport_hermes_remote.py",
+          "scripts/test_passport_hermes_sim.py",
+          "docs/hermes-assistant.md",
+          "firmware/passport_device/main/hermes_remote.hpp",
+          "firmware/passport_device/main/hermes_remote.cpp",
+          "firmware/passport_device/main/hermes_storage.cpp",
+          "firmware/passport_device/main/hermes_services.cpp",
+          "firmware/passport_device/main/native_services.cpp",
+          "firmware/passport_device/main/native_services.hpp",
+          "firmware/passport_device/main/wifi_portal.cpp",
+          "firmware/passport_device/main/wifi_portal.hpp",
+          "firmware/passport_device/main/wifi_portal_page.hpp",
+          "firmware/passport_connectivity/main/live_services.cpp",
+          "firmware/passport_connectivity/main/live_services.hpp",
+          "firmware/passport_connectivity/main/main.cpp",
+          "tests/test_passport_hermes_firmware.py",
+          "scripts/test_passport_hermes_portal.mjs"
+        ],
+        "unsampled_paths": []
+      }
     }
   ]
 }

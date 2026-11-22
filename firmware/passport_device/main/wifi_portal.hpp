@@ -35,6 +35,9 @@ class WifiPortal {
     esp_err_t stockSave(httpd_req_t*);
     esp_err_t wheelList(httpd_req_t*);
     esp_err_t wheelSave(httpd_req_t*);
+    esp_err_t hermesPrefs(httpd_req_t*);
+    esp_err_t hermesSave(httpd_req_t*);
+    esp_err_t hermesResolve(httpd_req_t*);
     esp_err_t languageSave(httpd_req_t*);
 public:
     char name[28]{};

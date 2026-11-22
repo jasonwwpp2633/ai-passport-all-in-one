@@ -153,7 +153,10 @@ bool LiveServices::snapshotJson(char* output,size_t size){
      json.append(values);
      // What the last spoken phrase or delete did, on the pages that take one.
      if(a==App::Rate||a==App::Stock||a==App::Countdown||a==App::Alarm||a==App::Settings){json.append(",\"notice\":");json.string(m.lastNotice);}
-     if(a==App::Settings){json.append(",\"city\":");json.string(m.cityName);
+     if(a==App::Hermes){
+         const auto& h=m.page.hermes;json.append(",\"hermes_text\":");json.string(h.heard);
+         snprintf(values,sizeof(values),",\"hermes_turn\":%lu",static_cast<unsigned long>(h.turn));json.append(values);}
+    if(a==App::Settings){json.append(",\"city\":");json.string(m.cityName);
          if(m.settingsPage==SettingsPage::City){json.append(",\"city_status\":");json.string(m.cityStatus());}}
      // The start of the top note on show (the newest after a save), for tests.
      if(a==App::Memo){json.append(",\"memo_head\":");json.string(m.page.memo.rows[0].head);}
@@ -218,6 +221,13 @@ esp_err_t LiveServices::receive(httpd_req_t* request) {
     httpd_resp_set_type(request,"application/json");
     return httpd_resp_sendstr(request,"{\"queued\":true}");
 }
+bool LiveServices::remoteHermes()const{
+#ifdef PASSPORT_DEVICE
+    return runtime_.active()==App::Hermes&&native_&&native_->remoteHermes();
+#else
+    return false;
+#endif
+}
 void LiveServices::request(const char* operation) {
     // A refresh (by the timer, an error retry or entering) of 自选股 is for what is on screen.
     char stock[16];
@@ -250,6 +260,10 @@ void LiveServices::request(const char* operation) {
     const bool voice=!strcmp(operation,"speak")||!strcmp(operation,"locate");
     if(voice)voiceJob_=pending_;
 #ifdef PASSPORT_DEVICE
+    if(remoteHermes()&&strcmp(operation,"toggle")){
+        if(!strcmp(operation,"send"))native_->hermesInput(runtime_.model.page.hermes.heard,runtime_.model.page.hermes.turn);
+        native_->network(networkReady_);native_->request(App::Hermes,pendingGeneration_,pending_,operation);return;
+    }
     // 状态牌 and 随机转盘 are local pages; only what is spoken goes to the cloud (语音笔记's task).
     if(needsInternet(runtime_.active())||voice||(runtime_.active()==App::Feishu&&!strcmp(operation,"say"))||((speaksOnce(runtime_.active())||speaksToo(runtime_.active()))&&!strcmp(operation,"toggle"))){native_->network(networkReady_);if(!native_->request(runtime_.active(),pendingGeneration_,pending_,operation)){copy(runtime_.model.liveState,"操作太快，请重试");runtime_.model.livePhase=LivePhase::Error;}return;}
     if(!needsComputer(runtime_.active())){pending_=0;return;}
@@ -341,6 +355,14 @@ void LiveServices::action(Key key) {
     const auto active=runtime_.active();
     // 语音指令: any short key turns down a delete 小智 asked (Confirm then goes on to say another phrase).
     if(active==App::Voice&&dropAsk_.page!=App::Count){dropAsk_={};runtime_.model.voiceDropAsk=false;copy(runtime_.model.lastNotice,"已取消删除");voiceAt_=esp_timer_get_time()/1000000;if(key!=Key::Confirm)return;}
+    if(active==App::Hermes){
+        if(key==Key::Confirm&&!runtime_.model.page.hermes.busy){
+            if(runtime_.model.page.hermes.locked){copy(runtime_.model.liveState,"请先在电脑核查原任务");return;}
+            if(!remoteHermes()&&!runtime_.model.voiceBusy()&&!runtime_.model.bridgeAlive){copy(runtime_.model.liveState,"请先连接电脑助手");return;}
+            request("toggle");
+        }
+        return;
+    }
     if(active==App::Focus) { persistFocus(); return; }
     if(active==App::Words) {
         const auto* card=wordsCurrent(runtime_.model.words,runtime_.model.wordSession);
@@ -492,6 +514,7 @@ bool LiveServices::tick(uint64_t now) {
 #else
         audioReady=audio_.start(active,runtime_.generation());
 #endif
+        if(active==App::Hermes)model.page.hermes.remote=remoteHermes();
         copy(model.liveValue,"--"); copy(model.liveState,"连接中"); for(auto& line:model.liveLines) line[0]=0;
         model.mediaCount=0;model.mediaPlaying=false;model.podcastCount=0;newsAsked_=0;newsItemAsked_=-1;dailyAsked_=wordAsked_=podcastAsked_=-1;quizAsked_=false;stockAsked_[0]=macroAsked_[0]=0;warnAsked_=0;typhoonAsked_=hotAsked_=-1;trainAsked_[0]=0;trainPickAsked_=-1;
 #ifdef PASSPORT_DEVICE
@@ -567,7 +590,11 @@ bool LiveServices::tick(uint64_t now) {
     // 语音笔记: the text the cloud heard, saved once; the device's task waits until it is.
     if(active==App::Memo||speaksOnce(active)||active==App::Rate||active==App::Voice||active==App::Train)if(const char* heard=native_->memoHeard()){
         App go=App::Count;
-        if(active==App::Voice)go=command(heard,now);
+        if(active==App::Hermes){
+            if(*heard&&runtime_.hermesMessage(heard)){runtime_.model.page.hermes.outgoing=false;request("send");}
+            else if(!*heard)copy(model.liveState,"没有听清，请再说一次");
+        }
+        else if(active==App::Voice)go=command(heard,now);
         else if(addHeard(runtime_,active,heard)>=0){}
         else if(active==App::Rate){if(runtime_.addRate(heard)){voiceJob_=0;request("refresh");}}
         // 高铁查询: the train heard is fetched once the phrase's task has ended (tick, trainOperation).
@@ -613,7 +640,7 @@ bool LiveServices::tick(uint64_t now) {
             if(active==App::Feishu&&!pending_)request("refresh");
         } else if(json &&
 #ifdef PASSPORT_DEVICE
-                  (!needsInternet(active)||message.native)&&
+                  ((!needsInternet(active)&&!remoteHermes())||message.native)&&
 #endif
                   number(json,"app")==static_cast<int>(active) && number(json,"generation")==runtime_.generation()
                   && (number(json,"request")==pending_ || (!pending_ && cJSON_IsTrue(field(json,"stream")) && number(json,"request")==accepted_))) {
@@ -634,6 +661,14 @@ bool LiveServices::tick(uint64_t now) {
             const auto* lines=field(json,"lines");
             for(unsigned i=0;i<4;++i) { const auto* line=cJSON_GetArrayItem(lines,i); copy(model.liveLines[i],cJSON_IsString(line) ? line->valuestring : ""); }
             if(message.native&&active==App::Chat&&turn>=0&&turn<=UINT32_MAX)model.chatRecord(static_cast<unsigned>(turn),model.liveLines[0],model.liveLines[1]);
+            if(active==App::Hermes&&cJSON_IsObject(field(json,"hermes"))){
+                const auto* o=field(json,"hermes");auto& h=model.page.hermes;
+                const bool changed=strcmp(h.answer,string(o,"text"));
+                hermesText(h.heard,sizeof(h.heard),string(o,"heard"));hermesText(h.answer,sizeof(h.answer),string(o,"text"));
+                h.busy=cJSON_IsTrue(field(o,"busy"));h.truncated=cJSON_IsTrue(field(o,"truncated"));
+                h.locked=cJSON_IsTrue(field(o,"locked"));h.remote=remoteHermes();if(changed)h.scroll=0;
+                h.turn=static_cast<uint32_t>(std::clamp(number(o,"turn",h.turn),0.0,double(UINT32_MAX)));
+            }
             if(active==App::Feishu&&!message.native&&cJSON_IsObject(field(json,"feishu"))){
                 const auto* o=field(json,"feishu");auto& v=model.page.feishu;v.count=0;const cJSON* item;
                 v.mode=std::clamp(number(o,"mode",0),0.0,2.0);v.today=std::clamp(number(o,"today",0),0.0,65535.0);copy(v.error,string(o,"error"));copy(v.note,string(o,"note"));
@@ -908,7 +943,9 @@ bool LiveServices::tick(uint64_t now) {
         cJSON_Delete(json); mbedtls_platform_zeroize(&message,sizeof(message)); renderLocal(now);
         printf("SERVICE_APPLIED received=%lu stale=%lu\n",static_cast<unsigned long>(received_),static_cast<unsigned long>(stale_));
     }
-    const uint64_t interval=active==App::Monitor ? 2 : active==App::Codex ? 10 : active==App::Guard ? 30 : active==App::News ? (model.newsPage==1?120:0) : active==App::Rate||active==App::Forecast||active==App::Macro ? 1800 : active==App::Stock ? 20 : active==App::Quake ? 300 : active==App::Hacker ? 900 : active==App::Typhoon ? 1800 : active==App::Train ? 300 : active==App::Hot ? 600 : (active==App::Home) ?
+    if(active==App::Hermes&&model.page.hermes.next){model.page.hermes.next=false;hermesNext();dirty=true;}
+    if(active==App::Hermes&&model.page.hermes.reset){model.page.hermes.reset=false;request("new");dirty=true;}
+    const uint64_t interval=active==App::Hermes?(remoteHermes()?(model.page.hermes.busy||model.page.hermes.locked||!*model.page.hermes.heard||!*model.page.hermes.answer?5:0):2):active==App::Monitor ? 2 : active==App::Codex ? 10 : active==App::Guard ? 30 : active==App::News ? (model.newsPage==1?120:0) : active==App::Rate||active==App::Forecast||active==App::Macro ? 1800 : active==App::Stock ? 20 : active==App::Quake ? 300 : active==App::Hacker ? 900 : active==App::Typhoon ? 1800 : active==App::Train ? 300 : active==App::Hot ? 600 : (active==App::Home) ?
 #ifdef PASSPORT_DEVICE
         weatherRefreshSeconds(model.weatherReading.known)
 #else
@@ -917,7 +954,7 @@ bool LiveServices::tick(uint64_t now) {
         :0;
     if(interval && now-requestedAt_>=interval && (!pending_ || now-requestedAt_>20) && !voiceJob_
 #ifdef PASSPORT_DEVICE
-       &&(active!=App::Home||native_->idle())
+       &&(active!=App::Home||native_->idle())&&(!remoteHermes()||native_->idle())
 #endif
     ) { requestedAt_=now; request("refresh"); }
     // 语音指令: home 10 s after the phrase (or a failure), where 你好小智 listens again.
@@ -930,7 +967,7 @@ bool LiveServices::tick(uint64_t now) {
     focusRemaining_=model.focusRemaining; focusRunning_=model.focusRunning; focusFinished_=model.focusFinished;
     focusPhase_=model.focusPhase;focusRounds_=model.focusRounds;focusDuration_=model.focusDuration;
     clockValid_=model.clockValid;
-    const bool needsHost=needsComputer(active);
+    const bool needsHost=needsComputer(active)&&!remoteHermes();
     const bool hostMissing=!hostContact_.load()||now>hostContact_.load()+5;
     model.bridgeAlive=!hostMissing;
     if(needsHost){
@@ -947,7 +984,7 @@ bool LiveServices::tick(uint64_t now) {
     }
     hostWasMissing_=hostMissing;
 #ifdef PASSPORT_DEVICE
-    if(needsInternet(active)&&networkReady_&&!previousNetwork_&&!entered){requestedAt_=now;request("enter");dirty=true;}
+    if((needsInternet(active)||remoteHermes())&&networkReady_&&!previousNetwork_&&!entered){requestedAt_=now;request("enter");dirty=true;}
 #endif
     previousNetwork_=networkReady_;
     if(active==App::Daily&&model.dailyWant!=model.dailyBack&&model.dailyWant!=dailyAsked_&&!pending_){

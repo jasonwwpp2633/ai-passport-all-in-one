@@ -99,6 +99,8 @@ public:
     uint32_t received() const { return received_; }
     uint32_t stale() const { return stale_; }
     bool stopAudio();
+    bool remoteHermes()const;
+    void hermesNext(){if(remoteHermes()&&!runtime_.model.page.hermes.busy)request("next");}
     bool nativeIdle()const;
     bool nativeBusy()const;  // a native task running or queued
     bool nativeOnline()const;  // the home page's task wants the HTTPS memory Bluetooth holds

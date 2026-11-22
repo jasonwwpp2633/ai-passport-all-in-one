@@ -29,6 +29,7 @@ from passport_books import Books
 from passport_mac_open import MacOpener
 from passport_feishu import Feishu,BUNDLE as FEISHU_BUNDLE
 from passport_computer_link import LinkBusy
+from passport_hermes import HermesAssistant
 from passport_paths import live_data, user_data, helper, codex_command, PACKAGED, RESOURCES, ffmpeg
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -253,6 +254,7 @@ class Services:
         self.ledger=Ledger(user_data()/'记账.csv')
         self.health=Health(user_data()/'健康.csv')
         self.books=Books(user_data()/'电子书')
+        self.hermes=HermesAssistant(user_data()/'Hermes')
         self.mac=MacOpener(lambda:self.settings.get('mac_app_aliases',{}))
         if getattr(simulator,'physical_device',False):
             self.audio.endpoint=simulator.audio_endpoint;self.audio.token=simulator.token;self.audio.force_reconnect=True;self.audio.playback=False
@@ -543,6 +545,15 @@ class Services:
         if app==5: return self.monitor()
         if app==3: return self.ai_page(op)
         if app==4: return {'state':'本地计时','value':'','lines':[]}
+        if app==53:
+            if op=='new':self.hermes.new_chat()
+            if op=='send':
+                data=self.sim.request('/app_state')
+                if data.get('app')!=app or data.get('generation')!=request['generation']:
+                    raise RuntimeError('Hermes page changed')
+                turn=int(data.get('hermes_turn',0))
+                self.hermes.submit(data.get('hermes_text',''),(self.hermes.instance,request['generation'],turn),turn=turn)
+            return self.hermes.snapshot()
         if app==49: return self.feishu_page(op)
         if app==41:
             # 离座锁屏: the badge's settings come with every request; the loop runs while the page is open.
@@ -716,6 +727,6 @@ class Services:
     def close(self):
         self.stop.set()
         for cleanup in (self.dictation_ble.close,self.stop_media,self.codex.close,
-                        lambda:self.cloud.close() if self.cloud else None,self.audio.close):
+                        lambda:self.cloud.close() if self.cloud else None,self.hermes.close,self.audio.close):
             try: cleanup()
             except Exception: pass

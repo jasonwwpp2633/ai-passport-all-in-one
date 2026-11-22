@@ -7,6 +7,8 @@
 #ifdef PASSPORT_DEVICE
 #include "board.hpp"
 #include "tool_tasks.hpp"
+#include "hermes_remote.hpp"
+#include "esp_random.h"
 #include "cJSON.h"
 #include "lwip/sockets.h"
 #include "wifi_portal.hpp"
@@ -243,13 +245,15 @@ void joinStrongest(){
     if(best>=0)joinSaved(best);
 }
 #endif
-int setAp(bool enabled, bool correct = true) {
+int setAp(bool enabled, bool correct = true, bool protectedSetup = false) {
     #ifdef PASSPORT_DEVICE
-    if(enabled&&board::provisioning())return 0;
+    if(enabled&&!protectedSetup){HermesConfig config{};if(hermesReadConfig(config))protectedSetup=*config.token;}
+    if(enabled&&board::provisioning()&&(!protectedSetup||*runtime.model.wifiSetupPassword))return 0;
+    if(enabled&&board::provisioning()&&protectedSetup){wifiPortal.end();board::provisioning(false);}
     if(enabled){joinActive=false;memset(&joinTarget,0,sizeof(joinTarget));if(autoScanning){esp_wifi_scan_stop();autoScanning=false;}}
     if(enabled&&!station){wifiRetryBudget=0;wifiRetryAt=0;esp_wifi_disconnect();vTaskDelay(pdMS_TO_TICKS(100));}
     if(enabled&&bt){const int result=bleStop();if(result)return result;restoreBleAfterProvision=true;}
-    if(!enabled){wifiPortal.end();esp_wifi_scan_stop();wifiPending=false;wifiRetryBudget=0;closePortalAt=0;memset(pendingWifi.wifiPassword,0,sizeof(pendingWifi.wifiPassword));}
+    if(!enabled){memset(runtime.model.wifiSetupPassword,0,sizeof(runtime.model.wifiSetupPassword));wifiPortal.end();esp_wifi_scan_stop();wifiPending=false;wifiRetryBudget=0;closePortalAt=0;memset(pendingWifi.wifiPassword,0,sizeof(pendingWifi.wifiPassword));}
     board::provisioning(enabled);
     if(enabled&&!wifiInitialized){wifi_init_config_t init=WIFI_INIT_CONFIG_DEFAULT();int rc=esp_wifi_init(&init);if(rc)return rc;wifiInitialized=true;esp_wifi_set_storage(WIFI_STORAGE_RAM);esp_wifi_set_mode(WIFI_MODE_APSTA);esp_wifi_start();}
     #endif
@@ -266,7 +270,14 @@ int setAp(bool enabled, bool correct = true) {
     wifi_config_t config{};
     #ifdef PASSPORT_DEVICE
     (void)correct;strcpy(reinterpret_cast<char*>(config.ap.ssid),board::apName());config.ap.ssid_len=strlen(board::apName());config.ap.authmode=WIFI_AUTH_OPEN;
+    memset(runtime.model.wifiSetupPassword,0,sizeof(runtime.model.wifiSetupPassword));
+    if(protectedSetup){
+        uint8_t random[8];esp_fill_random(random,sizeof(random));constexpr char hex[]="0123456789abcdef";
+        for(unsigned i=0;i<8;++i){runtime.model.wifiSetupPassword[i*2]=hex[random[i]>>4];runtime.model.wifiSetupPassword[i*2+1]=hex[random[i]&15];}
+        strcpy(reinterpret_cast<char*>(config.ap.password),runtime.model.wifiSetupPassword);config.ap.authmode=WIFI_AUTH_WPA2_PSK;
+    }
     #else
+    (void)protectedSetup;
     strcpy(reinterpret_cast<char*>(config.ap.ssid), "AI-Passport-Sim");
     strcpy(reinterpret_cast<char*>(config.ap.password), correct ? "passport123" : "wrong-hotspot-pass");
     config.ap.ssid_len = strlen("AI-Passport-Sim");
@@ -801,6 +812,17 @@ int execute(const char* name) {
 #endif
         return runtime.model.slidesFailed?-7:0;
     }
+    if(previous==App::Hermes&&(!strcmp(name,"ap_on")||!strcmp(name,"settings"))){
+        runtime.wake(now);
+        if(!strcmp(name,"settings")){
+#ifdef PASSPORT_DEVICE
+            if(!live.remoteHermes()){
+                runtime.key(Key::OpenSettings,now);runtime.model.settingsPage=SettingsPage::Wifi;return setAp(true,true,true);
+            }
+#endif
+            live.hermesNext();
+        }else runtime.longKey(true,now);return 0;
+    }
     // 随机转盘, 倒数日, 汇率 and 自选股: a long Up speaks a mode or options, an event, a currency, a security; a long Down
     // (twice) deletes the one on show, below (自选股's through the device's task).
     if ((previous==App::Wheel||previous==App::Countdown||previous==App::Rate||previous==App::Stock)&&!strcmp(name,"ap_on")) {runtime.wake(now);live.speak();return 0;}
@@ -992,7 +1014,7 @@ extern "C" void app_main() {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     // /app_state builds a bounded 2 KiB JSON snapshot; simulator and badge need the same stack budget.
     config.stack_size = 6144;
-    config.max_uri_handlers = 26;  // 22 + /content/* + /book + /health + /language
+    config.max_uri_handlers = 28;  // Includes /hermes and /hermes/resolve.
     config.uri_match_fn=httpd_uri_match_wildcard;
 #ifdef PASSPORT_DEVICE
     config.lru_purge_enable=true;
@@ -1161,7 +1183,7 @@ extern "C" void app_main() {
 #ifdef PASSPORT_DEVICE
         const auto nowBoard = esp_timer_get_time() / 1000000;
         const bool usb = board::usbConnected();
-        if(runtime.connected()!=usb&&needsComputer(runtime.active())){dictationBle.cancel();live.reconnectComputer();}
+        if(runtime.connected()!=usb&&(needsComputer(runtime.active())&&!live.remoteHermes())){dictationBle.cancel();live.reconnectComputer();}
         dictationBle.usbMode(usb);
         if(usb&&runtime.active()!=App::Slides&&runtime.active()!=App::Sonar){if(bt)bleStop();restoreBleAfterAudio=false;}
         if (runtime.connected() && !usb)
@@ -1242,11 +1264,11 @@ extern "C" void app_main() {
 #else
         // 状态牌 and 随机转盘 are local, but while what is spoken goes to the cloud it needs the memory BLE holds.
         // The home page keeps the computer link too (users leave the badge there), pausing it only while it fetches.
-        if(((needsInternet(runtime.active())&&runtime.active()!=App::Home)||(runtime.active()==App::Home&&live.nativeOnline())||((speaksOnce(runtime.active())||speaksToo(runtime.active())||runtime.active()==App::Feishu)&&live.nativeBusy()))&&!live.macWaiting()&&bt&&!board::provisioning()&&bleCompanion.drained()){if(bleStop()==0)restoreBleAfterAudio=false;}
+        if((live.remoteHermes()||(needsInternet(runtime.active())&&runtime.active()!=App::Home)||(runtime.active()==App::Home&&live.nativeOnline())||((speaksOnce(runtime.active())||speaksToo(runtime.active())||runtime.active()==App::Feishu)&&live.nativeBusy()))&&!live.macWaiting()&&bt&&!board::provisioning()&&bleCompanion.drained()){if(bleStop()==0)restoreBleAfterAudio=false;}
         if(bt&&!settings.bluetoothEnabled)bleStop();
         static int64_t nextBleStart=0;
         // 打开 Mac 程序 brings Bluetooth up on any page until the computer has answered.
-        const bool computerBle=(needsComputer(runtime.active())||runtime.active()==App::Home||(runtime.active()==App::Settings&&runtime.model.settingsPage==SettingsPage::Bluetooth)||live.macWaiting())&&!runtime.connected();
+        const bool computerBle=((needsComputer(runtime.active())&&!live.remoteHermes())||runtime.active()==App::Home||(runtime.active()==App::Settings&&runtime.model.settingsPage==SettingsPage::Bluetooth)||live.macWaiting())&&!runtime.connected();
         if((computerBle||runtime.active()==App::Slides||runtime.active()==App::Sonar)&&runtime.power(esp_timer_get_time()/1000000)==Power::Awake&&!bt&&live.nativeIdle()&&uiPreparedFor(runtime.active())&&settings.bluetoothEnabled&&esp_timer_get_time()>=nextBleStart){bleStart();nextBleStart=esp_timer_get_time()+5000000;restoreBleAfterAudio=false;}
         wifiPortal.tick(ap,wifiPending);
         if(wifiPending){

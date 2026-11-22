@@ -72,6 +72,7 @@ constexpr Profile kProfiles[] = {
     {"book", "电子书", 0, false, false},
     {"health", "健康记录", 0, false, false, "健康"},
     {"train", "高铁查询", 0, false, false, "高铁"},
+    {"hermes", "Hermes助手", 0, false, false, "Hermes"},
 };
 static_assert(std::size(kProfiles) == static_cast<unsigned>(App::Count));
 }
@@ -433,6 +434,7 @@ void Runtime::reloadQr() {
 bool Runtime::longKey(bool up, uint64_t now) {
     tick(now); lastInput_ = now;
     auto& m = model;
+    if(active_==App::Hermes){if(!m.page.hermes.busy&&!m.voiceBusy()){if(up)m.page.hermes.reset=true;else if(m.page.hermes.remote)m.page.hermes.next=true;}return true;}
     // 电子书: long Up/Down make the text larger/smaller; the page starts where it did.
     if (active_ == App::Book) {
         auto& b = m.page.book; const auto size = static_cast<uint8_t>(std::clamp(int(b.font) + (up ? 1 : -1), 0, int(kBookSizes) - 1));
@@ -1490,6 +1492,7 @@ Result Runtime::switchTo(App target, bool failAlloc, bool failStart) {
         auto& m = model; SettingsStore::loadHealthPrefs(m.healthPrefs); editHealth(m.page.health, [](HealthBook&) { return false; });
         m.healthView = m.healthRow = m.healthIndex = m.healthTop = m.healthSetRow = 0; m.healthArmed = false; m.listenAt = 0;
     }
+    if(target==App::Hermes){model.page.hermes=HermesView{};model.listenAt=0;strcpy(model.liveState,"等待电脑助手");}
     if (target == App::Train) {
         auto& m = model; m.trainView = m.trainIndex = m.trainTop = 0; m.trainFrom = m.trainTrip = kTrainNone; m.trainArmed = false; m.listenAt = 0;
         m.page.train = {}; m.page.train.pick = m.page.train.from = m.page.train.to = kTrainNone;
@@ -1600,6 +1603,11 @@ void Runtime::key(Key key, uint64_t now) {
         if (key == Key::Up) moveMenu(-1);
         if (key == Key::Down) moveMenu(1);
         if (key == Key::Confirm) switchTo(selectedApp());
+    } else if(active_==App::Hermes){
+        auto& h=model.page.hermes;
+        if(key==Key::Up&&h.scroll)--h.scroll;
+        const unsigned lines=uiHermesLines(h.answer);
+        if(key==Key::Down&&lines>6&&h.scroll<lines-6)++h.scroll;
     } else if (active_ == App::Words) {
         auto& session = model.wordSession;
         if (key == Key::Up || key == Key::Down) wordsMove(session, key == Key::Up ? -1 : 1);
@@ -2307,7 +2315,7 @@ Power Runtime::automaticPower(uint64_t now) const {
     // So is a status sign that went dark; the sign's own switch decides.
     // A running metronome keeps its beat on screen.
     // A ringing alarm lights the screen.
-    if ((connected_ && model.usbAwake) || flashBusy_ || quarantined_ || active_ == App::Alert || active_ == App::Torch || (active_ == App::Status && model.status.awake) || (active_ == App::Alarm && model.alarmRinging) || (active_ == App::Todo && model.todoRinging)
+    if ((active_==App::Hermes&&model.page.hermes.busy) || (connected_ && model.usbAwake) || flashBusy_ || quarantined_ || active_ == App::Alert || active_ == App::Torch || (active_ == App::Status && model.status.awake) || (active_ == App::Alarm && model.alarmRinging) || (active_ == App::Todo && model.todoRinging)
         || (active_ == App::Sound && model.soundRunning) || (active_ == App::Walkie && (model.walkieTalk || model.walkiePhase == 2))) return Power::Awake;
     (void)suspended_; // USB suspend alone must not destroy an enumerated session.
     const auto idle = settings_ ? settings_->idleSeconds : 360;
@@ -2334,3 +2342,15 @@ bool Runtime::shutdown() {
     return true;
 }
 } // namespace passport
+
+namespace passport {
+bool Runtime::hermesMessage(const char* text){
+    if(active_!=App::Hermes||!text||!*text||model.page.hermes.busy||model.page.hermes.locked)return false;
+    auto& h=model.page.hermes;
+    if(strlen(text)>=sizeof(h.heard)){strcpy(model.liveState,"内容太长，请分两次说");return false;}
+    hermesText(h.heard,sizeof(h.heard),text);
+    wake(now_);
+    h.answer[0]=0;h.scroll=0;h.busy=h.outgoing=true;h.truncated=false;++h.turn;
+    strcpy(model.liveState,"Hermes 正在处理");model.livePhase=LivePhase::Ready;return true;
+}
+}

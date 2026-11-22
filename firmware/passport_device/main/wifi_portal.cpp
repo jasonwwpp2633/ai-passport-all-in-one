@@ -8,6 +8,7 @@
 #include "podcast_catalog.hpp"
 #include "stock_catalog.hpp"
 #include "settings.hpp"
+#include "hermes_remote.hpp"
 #include "apps.hpp"
 #include "i18n.hpp"
 #include "cJSON.h"
@@ -46,6 +47,10 @@ void WifiPortal::init(httpd_handle_t server,esp_netif_t* ap){
     upload.uri="/stocks";upload.handler=[](httpd_req_t* request){return static_cast<WifiPortal*>(request->user_ctx)->stockSave(request);};
     ESP_ERROR_CHECK(httpd_register_uri_handler(server,&upload));
     upload.uri="/wheel";upload.handler=[](httpd_req_t* request){return static_cast<WifiPortal*>(request->user_ctx)->wheelSave(request);};
+    ESP_ERROR_CHECK(httpd_register_uri_handler(server,&upload));
+    upload.uri="/hermes";upload.handler=[](httpd_req_t* request){return static_cast<WifiPortal*>(request->user_ctx)->hermesSave(request);};
+    ESP_ERROR_CHECK(httpd_register_uri_handler(server,&upload));
+    upload.uri="/hermes/resolve";upload.handler=[](httpd_req_t* request){return static_cast<WifiPortal*>(request->user_ctx)->hermesResolve(request);};
     ESP_ERROR_CHECK(httpd_register_uri_handler(server,&upload));
     upload.uri="/language";upload.handler=[](httpd_req_t* request){return static_cast<WifiPortal*>(request->user_ctx)->languageSave(request);};
     ESP_ERROR_CHECK(httpd_register_uri_handler(server,&upload));
@@ -102,6 +107,45 @@ esp_err_t WifiPortal::identityUpload(httpd_req_t* request){
     // Always finish: a broken transfer fails the CRC and the screens show "not imported".
     if(!identityWriteFinish()||!written)return reply(request,"400 Bad Request","{\"message\":\"保存失败，请重新上传\"}");
     return reply(request,"200 OK","{\"saved\":true}");
+}
+esp_err_t WifiPortal::hermesPrefs(httpd_req_t* request){
+    HermesConfig config{};HermesTask task{};const bool valid=hermesReadConfig(config)&&hermesReadTask(task);
+    if(!valid)return reply(request,"500 Internal Server Error","{\"message\":\"任务记录异常，请在电脑核查\"}");
+    auto* json=cJSON_CreateObject();if(!json)return ESP_FAIL;
+    cJSON_AddBoolToObject(json,"enabled",config.enabled);cJSON_AddStringToObject(json,"origin",config.origin);
+    cJSON_AddBoolToObject(json,"has_token",*config.token);cJSON_AddStringToObject(json,"task_id",task.request);
+    cJSON_AddBoolToObject(json,"pending",task.phase==HermesTaskPhase::Pending||task.phase==HermesTaskPhase::Unknown);
+    cJSON_AddBoolToObject(json,"uncertain",task.phase==HermesTaskPhase::Unknown);
+    auto* raw=cJSON_PrintUnformatted(json);cJSON_Delete(json);if(!raw)return ESP_FAIL;
+    httpd_resp_set_type(request,"application/json");httpd_resp_set_hdr(request,"Cache-Control","no-store");const auto result=httpd_resp_sendstr(request,raw);cJSON_free(raw);return result;
+}
+esp_err_t WifiPortal::hermesSave(httpd_req_t* request){
+    if(!access(request)||!sameOrigin(request))return reply(request,"403 Forbidden","{\"message\":\"请在设备上开启手机配置后重试\"}");
+    if(request->content_len<=0||request->content_len>1024)return reply(request,"400 Bad Request","{\"message\":\"设置内容过长\"}");
+    char raw[1025]{};int used=0;
+    while(used<request->content_len){const int n=httpd_req_recv(request,raw+used,request->content_len-used);if(n<=0)return ESP_FAIL;used+=n;}
+    auto* json=cJSON_Parse(raw);auto* enabled=cJSON_GetObjectItemCaseSensitive(json,"enabled");auto* origin=cJSON_GetObjectItemCaseSensitive(json,"origin");auto* token=cJSON_GetObjectItemCaseSensitive(json,"token");
+    HermesConfig config{};bool valid=hermesReadConfig(config)&&cJSON_IsBool(enabled)&&cJSON_IsString(origin)&&cJSON_IsString(token)&&strlen(origin->valuestring)<sizeof(config.origin)&&strlen(token->valuestring)<sizeof(config.token);
+    wifi_config_t accessPoint{};
+    if(valid&&*token->valuestring&&socketLocalIpv4(httpd_req_to_sockfd(request),inet_addr("192.168.8.1"))
+       &&(esp_wifi_get_config(WIFI_IF_AP,&accessPoint)!=ESP_OK||accessPoint.ap.authmode==WIFI_AUTH_OPEN)){
+        cJSON_Delete(json);memset(raw,0,sizeof(raw));return reply(request,"403 Forbidden","{\"message\":\"录入令牌请在 Hermes助手长按下键开启加密配置热点\"}");
+    }
+    if(valid&&*config.token&&strcmp(config.origin,origin->valuestring)&&!*token->valuestring)valid=false;
+    if(valid){config.enabled=cJSON_IsTrue(enabled);strcpy(config.origin,origin->valuestring);if(*token->valuestring)strcpy(config.token,token->valuestring);config.revision=1;valid=hermesConfigValid(config);}
+    cJSON_Delete(json);memset(raw,0,sizeof(raw));
+    if(!valid)return reply(request,"400 Bad Request","{\"message\":\"请填写有效的 HTTPS 地址和设备令牌\"}");
+    const bool saved=hermesWriteConfig(config);memset(config.token,0,sizeof(config.token));
+    if(!saved)return reply(request,"409 Conflict","{\"message\":\"存在未决任务或保存失败，请先在电脑核查\"}");
+    return reply(request,"200 OK","{\"saved\":true,\"restart_required\":true}");
+}
+esp_err_t WifiPortal::hermesResolve(httpd_req_t* request){
+    if(!access(request)||!sameOrigin(request))return reply(request,"403 Forbidden","{\"message\":\"请在设备上开启手机配置后重试\"}");
+    if(request->content_len<=0||request->content_len>64)return reply(request,"400 Bad Request","{\"message\":\"请求无效\"}");
+    char raw[65]{};int used=0;while(used<request->content_len){int n=httpd_req_recv(request,raw+used,request->content_len-used);if(n<=0)return ESP_FAIL;used+=n;}
+    auto* json=cJSON_Parse(raw);const bool confirmed=cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(json,"confirmed_on_mac"));cJSON_Delete(json);
+    if(!confirmed||!hermesResolveTask())return reply(request,"409 Conflict","{\"message\":\"仅能解除已经在电脑核查的未知任务\"}");
+    return reply(request,"200 OK","{\"saved\":true,\"restart_required\":true}");
 }
 esp_err_t WifiPortal::mediaPrefs(httpd_req_t* request){
     MediaPrefs prefs{};mediaLoad("prefs",prefs);
@@ -399,6 +443,7 @@ esp_err_t WifiPortal::get(httpd_req_t* request){
     if(!access(request))return httpd_resp_send_err(request,HTTPD_403_FORBIDDEN,"enable setup on device");
     if(!strcmp(request->uri,"/wifi/status"))return status(request);
     if(!strcmp(request->uri,"/identity/data"))return identityData(request);
+    if(!strcmp(request->uri,"/hermes/prefs"))return hermesPrefs(request);
     if(!strcmp(request->uri,"/media/prefs"))return mediaPrefs(request);
     if(!strcmp(request->uri,"/rates/prefs"))return ratePrefs(request);
     if(!strcmp(request->uri,"/podcast/list"))return podcastList(request);

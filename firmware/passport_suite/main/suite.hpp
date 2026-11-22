@@ -7,6 +7,7 @@
 #include <cstring>
 #include "settings.hpp"
 #include "apps.hpp"
+#include "hermes.hpp"
 #include "weather.hpp"
 #include "typhoon.hpp"
 #include "alarm.hpp"
@@ -81,6 +82,7 @@ struct Model {
     uint8_t settingsSelection{};uint32_t settingsValue{};
     // Settings > 所在城市: the city set (on the phone, by voice or by IP) as "杭州 · 浙江", and the row picked (0 speak, 1 IP).
     char cityName[48]{};uint8_t cityRow{};
+    char wifiSetupPassword[17]{};
     char wifiSetupStatus[80]{"手机连接热点后选择 WiFi"};
     // Settings > WiFi: the saved networks' names (last joined first). wifiRow 0 is 添加 WiFi, n the network n-1;
     // wifiArmed: a long Down asked to forget it.
@@ -158,6 +160,7 @@ struct Model {
     struct AiItem{char id[9],title[37],folder[19],reply[121];uint8_t state;uint16_t minutes;};
     struct AiView{std::array<AiItem,5> items;uint8_t count;bool loaded;};  // loaded: the computer has answered
     union PageData{
+        HermesView hermes;
         // 财经新闻: the six headlines, and item textFor's text in full (255: none yet).
         struct{std::array<NewsItem,6> items;char text[720];uint8_t textFor;} news;
         std::array<EventItem,16> events;
@@ -417,6 +420,7 @@ public:
     uint32_t switches{}, rejectedEvents{}, queueDrops{};
     Result lastResult{Result::Ok};
     bool init(SystemSettings& settings);
+    bool hermesMessage(const char* text);
     // Main-loop only. Store first, then replace the complete view; voice/reminders keep their App IDs.
     bool configureMenu(const MenuLayout& layout,bool persist=true);
     const MenuLayout& menuLayout()const{return menuLayout_;}
@@ -550,6 +554,7 @@ void uiResourcesReady(bool);
 bool uiPreparedFor(App);
 bool uiPrepare(App);
 unsigned uiTextLines(const char* text,int width=224);  // lines the page's paragraph needs for text, at 16 px across width px
+unsigned uiHermesLines(const char*);
 unsigned uiWrappedLines(const char* text);  // the same, English wrapped between words (中英翻译)
 void uiRender(const Runtime& runtime);
 // Animation tick without a model change; Macro's footer can scroll without redrawing its body.

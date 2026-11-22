@@ -52,6 +52,9 @@ template<size_t N> void decoded(char(&to)[N],const char* from){copy(to,from);per
 void urlEncode(char* out,size_t capacity,const char* text);  // below
 }
 NativeServices::NativeServices(AudioPipe& audio,Reply reply,void* context):audio_(audio),reply_(reply),context_(context){
+    HermesConfig config{};HermesTask task{};const bool configOk=hermesReadConfig(config),taskOk=hermesReadTask(task);
+    if(!configOk)config={};
+    remote_.restore(config,task,taskOk);
     actions_=xQueueCreate(4,sizeof(Job));configASSERT(actions_);nvs_handle_t h;uint8_t allowed=0;
     if(nvs_open("device",NVS_READONLY,&h)==ESP_OK){nvs_get_u8(h,"ip_location",&allowed);nvs_close(h);}allowed_=allowed==1;
 }
@@ -197,7 +200,7 @@ bool NativeServices::request(App app,uint32_t generation,uint32_t request,const 
     if(!network_&&app!=App::Macro){const char* lines[]{"请先连接 WiFi，或使用 USB PPP","","",""};publish(job,"未联网",app==App::Home?"ready":"error","--",lines);return true;}
     // Only these tasks keep running and read actions_; a one-shot fetch would drop the action, so the request
     // waits as the next job instead and its answer replaces the running fetch's (whose request is then stale).
-    const bool reads=app==App::Chat||app==App::Radio||app==App::Podcast||app==App::Words||app==App::Daily||app==App::Quiz||app==App::Hot||app==App::News||(app==App::Train&&strcmp(operation,"speak"))||keepsListening(app)||app==App::Voice||speaksOnce(app)||(speaksToo(app)&&!strcmp(operation,"toggle"));
+    const bool reads=(app!=App::Hermes||!strcmp(operation,"toggle"))&&(app==App::Chat||app==App::Radio||app==App::Podcast||app==App::Words||app==App::Daily||app==App::Quiz||app==App::Hot||app==App::News||(app==App::Train&&strcmp(operation,"speak"))||keepsListening(app)||app==App::Voice||speaksOnce(app)||(speaksToo(app)&&!strcmp(operation,"toggle")));
     if(reads&&task_&&!finished_&&owner_.load()==generation)return xQueueSend(actions_,&job,0)==pdTRUE;
     pending_=job;pendingReady_=true;pendingSince_=esp_timer_get_time();memoryWaiting_=false;return true;
 }
@@ -233,7 +236,7 @@ void NativeServices::poll(){
     }
 }
 void NativeServices::run(void* context){auto& self=*static_cast<NativeServices*>(context);self.work();self.closeSocket();self.prerolling_=false;self.preroll_.reset();if((self.current_.app==App::Chat&&strcmp(self.current_.operation,"probe"))||self.transcribing()||self.current_.app==App::Radio||self.current_.app==App::Podcast||self.current_.app==App::Words||self.current_.app==App::Daily||self.current_.app==App::Feishu)self.audio_.stop();self.ready_=self.listening_=self.speaking_=self.playing_=self.online_=false;self.finished_=true;vTaskSuspend(nullptr);}
-void NativeServices::work(){if(cancelled())return;if(!strcmp(current_.operation,"speak"))memo();else if(!strcmp(current_.operation,"locate"))locate();else if(current_.app==App::Home)home();else if(current_.app==App::Chat)chat();else if(current_.app==App::Radio)media();else if(current_.app==App::Podcast)podcast();else if(current_.app==App::Words)words();else if(current_.app==App::News)news();else if(current_.app==App::Rate)rates();else if(current_.app==App::History)history();else if(current_.app==App::Daily)daily();else if(current_.app==App::Quake)quake();else if(current_.app==App::Quiz)quiz();else if(current_.app==App::Hacker)hacker();else if(current_.app==App::Forecast)forecast();else if(current_.app==App::Stock)stock();else if(current_.app==App::Macro)macro();else if(current_.app==App::Typhoon)typhoon();else if(current_.app==App::Train)train();else if(current_.app==App::Hot)hot();else if(current_.app==App::Feishu)sayText();else if(transcribing())memo();stackFree_=uxTaskGetStackHighWaterMark(nullptr);}
+void NativeServices::work(){if(cancelled())return;if(!strcmp(current_.operation,"speak"))memo();else if(!strcmp(current_.operation,"locate"))locate();else if(current_.app==App::Hermes&&remote_.enabled()&&strcmp(current_.operation,"toggle"))hermes();else if(current_.app==App::Home)home();else if(current_.app==App::Chat)chat();else if(current_.app==App::Radio)media();else if(current_.app==App::Podcast)podcast();else if(current_.app==App::Words)words();else if(current_.app==App::News)news();else if(current_.app==App::Rate)rates();else if(current_.app==App::History)history();else if(current_.app==App::Daily)daily();else if(current_.app==App::Quake)quake();else if(current_.app==App::Quiz)quiz();else if(current_.app==App::Hacker)hacker();else if(current_.app==App::Forecast)forecast();else if(current_.app==App::Stock)stock();else if(current_.app==App::Macro)macro();else if(current_.app==App::Typhoon)typhoon();else if(current_.app==App::Train)train();else if(current_.app==App::Hot)hot();else if(current_.app==App::Feishu)sayText();else if(transcribing())memo();stackFree_=uxTaskGetStackHighWaterMark(nullptr);}
 // Once per boot: the clock synced (syncClock) and 小智's answer for each identity (cloudIdentity).
 namespace {bool clockTried;char cachedUrl[160],cachedToken[160];uint8_t cachedFor[6];}
 bool NativeServices::syncClock(){

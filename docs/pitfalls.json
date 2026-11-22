@@ -319,6 +319,122 @@
         "tests/test_passport_windows.py（pty 代替 COM 口）",
         "Mac 真机上强制 bridge=True 跑 Controller"
       ]
+    },
+    {
+      "id": "P08",
+      "title": "hermes_local_session_and_bounded_transport",
+      "severity": "high",
+      "confidence": "high",
+      "risk_codes": [
+        "task_reexecuted_after_unknown_outcome",
+        "json_escaped_bytes_exceed_queue",
+        "stale_reply_applied_to_other_page",
+        "screenshot_before_reply_applied"
+      ],
+      "symptoms": [
+        "电脑收到回复但虚拟固件仍显示处理中",
+        "超时后重复安排任务",
+        "换页后的旧回复覆盖当前页面"
+      ],
+      "trigger_actions": [
+        "修改 Hermes CLI、语音转发、服务响应或交互串口"
+      ],
+      "related_paths": [
+        "scripts/passport_hermes.py",
+        "scripts/passport_simulator.py",
+        "firmware/passport_suite/main/interactive_main.cpp",
+        "firmware/passport_connectivity/main/live_services.cpp"
+      ],
+      "affected_modules": [
+        "hermes_assistant",
+        "interactive_simulator",
+        "computer_assistant"
+      ],
+      "blast_radius": [
+        "Hermes 任务执行与会话上下文",
+        "胸牌服务队列和交互显示"
+      ],
+      "check_before_edit": [
+        "单条请求以 generation/turn 去重；超时、退出后保留未知状态，不自动重发",
+        "CLI 使用 stdin 与 argv，不用 shell、yolo 或 accept-hooks；只保存本会话 ID，不读取或复制密钥",
+        "服务包按 JSON 转义后的字节计数，不只按字符数；保留 2048 字节队列上限",
+        "模拟 UART 接收缓存 4096 字节，读取包时先排空；仅对当前 generation 应用回复",
+        "模拟器实测等待 SIM_HERMES_APPLIED 的轮次及 busy=0，再读取完整帧；不能将电脑端完成当作屏幕已更新",
+        "语音结束时 BLE 可能暂时断开，仍允许确认结束录音；真机路径需独立验收"
+      ],
+      "safe_observation_methods": [
+        "tests/test_passport_hermes.py 验证重复请求、续聊、超时及最坏 JSON 大小",
+        "scripts/test_passport_hermes_sim.py 真实本机 Hermes 的无工具聊天与任务计划，检查实际 LVGL 截图"
+      ]
+    },
+    {
+      "id": "P09",
+      "title": "hermes_remote_durable_identity_and_transport_boundary",
+      "severity": "high",
+      "confidence": "high",
+      "risk_codes": [
+        "reexecuted_unknown_task",
+        "api_cli_session_mixing",
+        "public_gateway_without_device_auth",
+        "python_http_mistaken_for_firmware_wifi"
+      ],
+      "symptoms": [
+        "超时后生成新ID重复安排任务",
+        "把Funnel或模拟器回环HTTP当作真机联网通过",
+        "API模式接管CLI会话导致拒绝或上下文丢失"
+      ],
+      "trigger_actions": [
+        "修改远程设备网关、客户端、Funnel接入或模拟器远程模式"
+      ],
+      "related_paths": [
+        "scripts/passport_hermes_remote.py",
+        "scripts/passport_hermes_client.py",
+        "scripts/passport_simulator.py",
+        "tests/test_passport_hermes_remote.py",
+        "docs/hermes-assistant.md",
+        "firmware/passport_device/main/hermes_remote.hpp",
+        "firmware/passport_device/main/hermes_remote.cpp",
+        "firmware/passport_device/main/hermes_storage.cpp",
+        "firmware/passport_device/main/hermes_services.cpp",
+        "firmware/passport_device/main/native_services.cpp",
+        "firmware/passport_device/main/native_services.hpp",
+        "firmware/passport_device/main/wifi_portal.cpp",
+        "firmware/passport_device/main/wifi_portal.hpp",
+        "firmware/passport_device/main/wifi_portal_page.hpp",
+        "firmware/passport_connectivity/main/live_services.cpp",
+        "firmware/passport_connectivity/main/live_services.hpp",
+        "firmware/passport_connectivity/main/main.cpp",
+        "tests/test_passport_hermes_firmware.py",
+        "scripts/test_passport_hermes_portal.mjs"
+      ],
+      "affected_modules": [
+        "hermes_remote",
+        "hermes_assistant",
+        "interactive_simulator"
+      ],
+      "blast_radius": [
+        "Hermes任务执行、会话归属、设备认证与重启恢复"
+      ],
+      "check_before_edit": [
+        "设备先持久化request_id，断线仅查询；同ID异内容409，未知结果阻止同会话新任务",
+        "CLI观察者中断且无run_id的任务重启标为unknown；API已接受run_id持久化后只GET恢复；人工核查只改本地记录，不自动取消或重做",
+        "CLI与API不混用旧会话和状态目录；API主密钥仅在Mac，设备令牌经HTTPS传输且不跟随重定向",
+        "服务只监听loopback且带认证；Funnel不同于Serve，需账户启用；不覆盖其他映射",
+        "网关分页按实际JSON字节预算，客户端保留整页优先裁剪输入预览",
+        "模拟器仍由Python请求HTTP；原生C++另有HermesRemote和串行HTTPS适配，交叉编译/宿主测试不等于iPhone热点实测",
+        "hermes/config_v1与task_v1独立于系统config_v1；配置重启生效，修订号阻止旧任务覆盖新配置；未决任务不允许切换配置",
+        "Hermes refresh/send/next不能进入ASR actions队列；仅toggle继续转写，任务结束释放TLS音频后再联网；远程模式取消电脑心跳与BLE依赖",
+        "提交前持久化ID且POST不重试；重启仅GET；响应须同task_id、游标及有界text，异常数据保留未决状态",
+        "手机页不返回令牌；留空仅同地址保留旧值，更换地址需重新输入；未知记录需电脑核查后显式解除并重启，不能解除Pending",
+        "手机配网页新增POST路由时同步HTTP handler容量；当前28项，避免启动注册失败",
+        "Hermes首次录入令牌必须通过其长按下开启的随机WPA2配置热点；已保存令牌后配网默认加密，密码只在屏幕显示；免密AP上的新令牌POST被拒绝"
+      ],
+      "safe_observation_methods": [
+        "tests/test_passport_hermes_remote.py验证认证、持久去重、未知状态、分页与恢复",
+        "scripts/test_passport_hermes_sim.py --remote 使用实际Hermes CLI和虚拟固件ACK/帧验证，不执行任务工具",
+        "tests/test_passport_hermes_firmware.py对生产状态机/存储进行ASan/UBSan恢复、配置修订隔离和故障注入",
+        "scripts/test_passport_hermes_portal.mjs隔离浏览器验证读取、留空保留令牌、未决锁定及确认操作"
+      ]
     }
   ]
 }

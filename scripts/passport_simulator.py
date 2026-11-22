@@ -3,6 +3,7 @@
 import argparse
 import base64
 import io
+import json
 import os
 from pathlib import Path
 import queue
@@ -13,6 +14,7 @@ import threading
 import time
 
 from PIL import Image
+from passport_hermes import HermesAssistant
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'releases/interactive-simulator'
@@ -21,11 +23,23 @@ EMU = Path.home() / '.local/share/esp32-agent/bin/esp-emu'
 
 
 class Simulator:
-    def __init__(self):
+    def __init__(self, remote_url=None, token_file=None):
         OUT.mkdir(parents=True, exist_ok=True)
+        OUT.chmod(0o700)
         self.frames = queue.Queue(maxsize=1)
         self.states = queue.Queue()
         self.error = None
+        self.send_lock = threading.Lock()
+        self.active_app, self.generation = '', 0
+        self.send_pending = False
+        self.hermes_input = threading.Event()
+        self.hermes_applied = queue.Queue()
+        self.remote = bool(remote_url)
+        if remote_url:
+            from passport_hermes_client import RemoteHermes
+            self.hermes = RemoteHermes(OUT/'hermes-remote-state', remote_url, token_file)
+        else:
+            self.hermes = HermesAssistant(OUT/'hermes-state')
         with socket.socket() as probe:
             probe.bind(('127.0.0.1', 0))
             port = probe.getsockname()[1]
@@ -54,7 +68,26 @@ class Simulator:
     def send(self, command):
         if self.process.poll() is not None:
             raise RuntimeError('仿真器已退出，请查看 ' + str(OUT / 'serial.log'))
-        self.connection.sendall(command.encode('ascii'))
+        with self.send_lock:
+            self.connection.sendall(command.encode('utf-8'))
+
+    def send_text(self, text):
+        if self.active_app != 'hermes':
+            raise ValueError('请先进入 Hermes助手')
+        if self.hermes.busy or self.send_pending:
+            raise ValueError('上一条任务正在处理，请稍候')
+        text = str(text).strip()
+        if not text or len(text.encode('utf-8')) > 383:
+            raise ValueError('消息不能为空，且最多 383 字节')
+        self.send_pending = True
+        self.send('@'+json.dumps({'kind':'say','generation':self.generation,'text':text},ensure_ascii=False)+'\n')
+
+    def hermes_reply(self, payload, generation, reset=False):
+        packet = dict(payload['hermes'],kind='reply',generation=generation,state=payload['state'],reset=reset,remote=self.remote)
+        try:
+            self.send('@'+json.dumps(packet,ensure_ascii=False)+'\n')
+        except (OSError, RuntimeError):
+            pass
 
     def read(self):
         colors = [bytes((((p >> 11) & 31) * 255 // 31,
@@ -66,7 +99,26 @@ class Simulator:
                     log.write(raw)
                     line = raw.decode(errors='replace').strip()
                     if line.startswith('SIM_STATE '):
+                        fields=dict(part.split('=',1) for part in line.split()[1:])
+                        if (self.active_app,self.generation)!=(fields['app'],int(fields.get('generation',0))):self.send_pending=False
+                        self.active_app=fields['app'];self.generation=int(fields.get('generation',0))
                         self.states.put(line)
+                    if line.startswith('SIM_HERMES_APPLIED '):
+                        self.hermes_applied.put(line)
+                    if line.startswith('SIM_HERMES_INPUT'):
+                        self.hermes_input.set()
+                    if line.startswith(('SIM_HERMES_ENTER ', 'SIM_HERMES_REQUEST ', 'SIM_HERMES_NEW ', 'SIM_HERMES_NEXT ')):
+                        event, data=line.split(' ',1);data=json.loads(data);generation=data['generation']
+                        if event=='SIM_HERMES_ENTER' and self.remote:
+                            self.hermes.watch(lambda payload,g=generation:self.hermes_reply(payload,g))
+                        if event=='SIM_HERMES_NEXT' and self.remote:
+                            self.hermes.next_page(lambda payload,g=generation:self.hermes_reply(payload,g))
+                        if event=='SIM_HERMES_REQUEST':
+                            self.send_pending=False
+                            self.hermes.submit(data['text'],(self.hermes.instance,generation,data['turn']),
+                                turn=data['turn'],update=lambda payload,g=generation:self.hermes_reply(payload,g))
+                        reset=event=='SIM_HERMES_NEW' and self.hermes.new_chat()
+                        self.hermes_reply(self.hermes.snapshot(),generation,reset=reset)
                     if line.startswith('FRAME_BEGIN '):
                         _, _, w, h = line.split()
                         if (int(w), int(h)) != (240, 320):
@@ -103,6 +155,7 @@ class Simulator:
             self.error = str(error)
 
     def close(self):
+        self.hermes.close()
         if self.process.poll() is None:
             self.process.terminate()
             try:
@@ -159,7 +212,22 @@ def window(sim):
             except (OSError, RuntimeError) as error:
                 self.status.setStringValue_(str(error))
 
+        def sendText_(self, sender):
+            try:
+                sim.send_text(self.input.stringValue())
+                self.input.setStringValue_('')
+            except (ValueError, OSError, RuntimeError) as error:
+                self.status.setStringValue_(str(error))
+
+        def nextPage_(self, sender):
+            if sim.active_app == 'hermes' and sim.remote:
+                sim.send('D')
+
         def refresh_(self, timer):
+            if sim.hermes_input.is_set():
+                sim.hermes_input.clear()
+                win.makeFirstResponder_(self.input)
+                self.status.setStringValue_('模拟器请在输入框输入消息，再点发送')
             latest = None
             try:
                 while True:
@@ -184,23 +252,35 @@ def window(sim):
     controller = Controller.alloc().init()
     style = A.NSWindowStyleMaskTitled | A.NSWindowStyleMaskClosable | A.NSWindowStyleMaskMiniaturizable
     win = A.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-        F.NSMakeRect(0, 0, 440, 700), style, A.NSBackingStoreBuffered, False)
-    win.setTitle_('AI Passport · 交互仿真器')
+        F.NSMakeRect(0, 0, 440, 790), style, A.NSBackingStoreBuffered, False)
+    win.setTitle_('AI Passport · Hermes助手' if sim.active_app=='hermes' else 'AI Passport · 交互仿真器')
     win.setDelegate_(controller)
     view = win.contentView()
-    controller.screen = A.NSImageView.alloc().initWithFrame_(F.NSMakeRect(40, 195, 360, 480))
+    controller.screen = A.NSImageView.alloc().initWithFrame_(F.NSMakeRect(40, 285, 360, 480))
     controller.screen.setImageScaling_(A.NSImageScaleProportionallyUpOrDown)
     view.addSubview_(controller.screen)
     controller.status = A.NSTextField.labelWithString_('正在启动 ESP32-C3 固件…')
-    controller.status.setFrame_(F.NSMakeRect(25, 163, 390, 22))
+    controller.status.setFrame_(F.NSMakeRect(25, 253, 390, 22))
     view.addSubview_(controller.status)
+    controller.input = A.NSTextField.alloc().initWithFrame_(F.NSMakeRect(20, 204, 280, 30))
+    controller.input.setPlaceholderString_('给 Hermes 发消息或安排任务')
+    controller.input.setTarget_(controller)
+    controller.input.setAction_('sendText:')
+    view.addSubview_(controller.input)
+    send = A.NSButton.buttonWithTitle_target_action_('发送到 Hermes', controller, 'sendText:')
+    send.setFrame_(F.NSMakeRect(307, 204, 115, 30))
+    view.addSubview_(send)
     for tag, title in enumerate(('上', '确认', '下', '长按上', '长按确认 / 返回', '长按下', '刷新画面')):
         button = A.NSButton.buttonWithTitle_target_action_(title, controller, 'press:')
         column, row = tag % 3, tag // 3
-        button.setFrame_(F.NSMakeRect(20 + column * 137, 117 - row * 35, 128, 30))
+        button.setFrame_(F.NSMakeRect(20 + column * 137, 147 - row * 35, 128, 30))
         button.setTag_(tag)
         view.addSubview_(button)
-    note = A.NSTextField.labelWithString_('示例天气 · 云端语音、音频及无线硬件需实机验证')
+    if sim.remote:
+        page = A.NSButton.buttonWithTitle_target_action_('下一页回复', controller, 'nextPage:')
+        page.setFrame_(F.NSMakeRect(157, 42, 128, 30))
+        view.addSubview_(page)
+    note = A.NSTextField.labelWithString_('示例天气 · Hermes 为真实会话 · 语音输入需实机')
     note.setFont_(A.NSFont.systemFontOfSize_(11))
     note.setFrame_(F.NSMakeRect(20, 12, 410, 20))
     view.addSubview_(note)
@@ -213,15 +293,31 @@ def window(sim):
 
 
 def main():
+    global OUT
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build', action='store_true', help='Rebuild the interactive firmware first')
+    parser.add_argument('--hermes', action='store_true', help='Open the Hermes assistant page directly')
     parser.add_argument('--smoke', action='store_true', help='Check firmware/keyboard round trip without opening a window')
+    parser.add_argument('--output-dir', type=Path, default=OUT, help='Separate simulator state/log directory')
+    parser.add_argument('--hermes-url', help='Remote HTTPS origin (loopback HTTP allowed for development)')
+    parser.add_argument('--hermes-token-file', type=Path, help='Private device credential file')
     args = parser.parse_args()
+    OUT = args.output_dir.resolve()
+    if bool(args.hermes_url) != bool(args.hermes_token_file):
+        parser.error('--hermes-url and --hermes-token-file must be used together')
     if args.build or not (BUILD / 'merged_flash.bin').exists():
         subprocess.run(['bash', str(ROOT / 'scripts/build_passport_suite.sh')],
                        cwd=ROOT, env=dict(os.environ, SIM_INTERACTIVE='1'), check=True)
-    sim = Simulator()
+    sim = Simulator(args.hermes_url, args.hermes_token_file)
     try:
+        if (args.hermes or args.hermes_url) and not args.smoke:
+            deadline=time.monotonic()+45
+            while sim.active_app!='home' and time.monotonic()<deadline:time.sleep(.05)
+            if sim.active_app!='home':raise RuntimeError('Firmware did not reach home')
+            sim.send('cuuc')
+            deadline=time.monotonic()+45
+            while sim.active_app!='hermes' and time.monotonic()<deadline:time.sleep(.05)
+            if sim.active_app!='hermes':raise RuntimeError('Firmware did not reach Hermes')
         smoke(sim) if args.smoke else window(sim)
     finally:
         sim.close()

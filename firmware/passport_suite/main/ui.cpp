@@ -115,10 +115,10 @@ constexpr int kCells = 9;  // menu: a 3 x 3 page of icons
 constexpr unsigned kDrawRows = 20;
 struct Badge { const char* symbol; uint32_t color; uint32_t ink{}; };  // ink: the icon on its tile (0: the page's dark)
 // Pages that draw their own title and body (no hero card, heading or notice line).
-constexpr bool ownPage(App app){return app==App::Book||app==App::Feishu||app==App::Quake||app==App::Quiz||app==App::Hacker||app==App::Wifi||app==App::Sound||app==App::Motion||app==App::Forecast||app==App::Noise||app==App::Alarm||app==App::Stock||app==App::Macro||app==App::Typhoon||app==App::Hot||app==App::Memo||app==App::Dictation||app==App::Wheel||app==App::Score||app==App::Translate||app==App::Guard||app==App::Todo||app==App::Ledger||app==App::Health||app==App::Calc||app==App::Voice||app==App::Walkie||app==App::Train;}
+constexpr bool ownPage(App app){return app==App::Hermes||app==App::Book||app==App::Feishu||app==App::Quake||app==App::Quiz||app==App::Hacker||app==App::Wifi||app==App::Sound||app==App::Motion||app==App::Forecast||app==App::Noise||app==App::Alarm||app==App::Stock||app==App::Macro||app==App::Typhoon||app==App::Hot||app==App::Memo||app==App::Dictation||app==App::Wheel||app==App::Score||app==App::Translate||app==App::Guard||app==App::Todo||app==App::Ledger||app==App::Health||app==App::Calc||app==App::Voice||app==App::Walkie||app==App::Train;}
 // Once these pages show content, a refresh or the next item loads behind it instead of under the loading screen.
 bool keepsContent(App app,const Model& m){
-    return (app==App::Podcast&&m.podcastCount)||(app==App::Daily&&*m.page.daily.en)||(app==App::Quiz&&m.quizCount)||(app==App::Quake&&m.quakeCount)||(app==App::Hacker&&m.storyCount)||(app==App::Forecast&&m.page.forecast.days)||(app==App::Stock&&m.stockCount)||app==App::Macro||(app==App::Typhoon&&m.page.typhoon.count)||(app==App::Hot&&m.hotCount)||app==App::Memo||app==App::Translate||app==App::Guard||(app==App::Feishu&&m.page.feishu.count)||app==App::Train;
+    return (app==App::Podcast&&m.podcastCount)||(app==App::Daily&&*m.page.daily.en)||(app==App::Quiz&&m.quizCount)||(app==App::Quake&&m.quakeCount)||(app==App::Hacker&&m.storyCount)||(app==App::Forecast&&m.page.forecast.days)||(app==App::Stock&&m.stockCount)||app==App::Macro||app==App::Hermes||(app==App::Typhoon&&m.page.typhoon.count)||(app==App::Hot&&m.hotCount)||app==App::Memo||app==App::Translate||app==App::Guard||(app==App::Feishu&&m.page.feishu.count)||app==App::Train;
 }
 // 健康记录's key hints (key_hints.hpp has the tabs).
 // 高铁查询's key hints (key_hints.hpp has the tabs).
@@ -190,6 +190,7 @@ Badge appBadge(App app){
     case App::Ledger: return {ICON_WALLET,0x34d399};
     case App::Health: return {ICON_HEART,0xf87171};
     case App::Train: return {ICON_TRAIN,0x38bdf8};
+    case App::Hermes: return {"H",0x5eead4};
     case App::Calc: return {ICON_CALC,0xfbbf24};
     case App::Voice: return {ICON_MIC,0x5fd3ff};
     case App::Walkie: return {LV_SYMBOL_CALL,0x4ade80};
@@ -300,10 +301,10 @@ void initChrome(lv_obj_t* screen){
 void renderChrome(const Runtime& runtime){
     statusBarRender(runtime);const auto& m=runtime.model;
     const auto app=runtime.active();
-    const bool alt=app==App::Codex?m.aiLevel>0:app==App::Dictation?m.aiDictation:app==App::Calendar?m.calendarView!=0:app==App::Quiz?m.quizShown:app==App::Podcast?m.podcastPlayer:app==App::Radio?m.radioList!=0:app==App::Stock?m.stockDetail:app==App::Macro?m.macroDetail:app==App::Hot?m.hotDetail:app==App::Forecast?m.forecastView==3&&m.page.forecast.warnings&&m.page.forecast.warnings!=0xff:app==App::Alarm?m.alarmRinging:app==App::Walkie?m.walkieAuto:app==App::Noise?m.noiseRow==std::size(kNoiseSounds):app==App::Stopwatch&&m.swRunning;
+    const bool alt=app==App::Hermes?m.page.hermes.remote:app==App::Codex?m.aiLevel>0:app==App::Dictation?m.aiDictation:app==App::Calendar?m.calendarView!=0:app==App::Quiz?m.quizShown:app==App::Podcast?m.podcastPlayer:app==App::Radio?m.radioList!=0:app==App::Stock?m.stockDetail:app==App::Macro?m.macroDetail:app==App::Hot?m.hotDetail:app==App::Forecast?m.forecastView==3&&m.page.forecast.warnings&&m.page.forecast.warnings!=0xff:app==App::Alarm?m.alarmRinging:app==App::Walkie?m.walkieAuto:app==App::Noise?m.noiseRow==std::size(kNoiseSounds):app==App::Stopwatch&&m.swRunning;
     const auto* hint=keyHint(app,m.settingsPage,m.focusRunning,*m.pairingCode,m.live&&m.livePhase==LivePhase::Loading,m.live&&m.livePhase==LivePhase::Error,alt,app==App::Wifi?m.wifiTab:app==App::Settings?(m.settingsPage==SettingsPage::City?dictationTab(m):m.settingsPage==SettingsPage::Idle?m.idleRow:m.wifiSetup?0u:m.wifiArmed?3u:m.wifiRow?2u:1u):
         app==App::Rate?voiceTab(m,m.rateArmed):app==App::Stock?voiceTab(m,m.stockArmed):app==App::Macro?0u:app==App::Countdown?voiceTab(m,m.countdownArmed):
-        app==App::Alarm?(m.alarmRinging&&m.timerRang?10u:m.listening()?3u:m.voiceBusy()?4u:m.alarmEdit&&m.timerPicked()?(m.timerEnd?7u:m.timerLeft?8u:6u):m.alarmEdit?5u:m.timerPicked()?9u:m.alarmArmed?2u:m.alarmIndex?1u:0u):app==App::Memo?memoTab(m):app==App::Wheel?(m.wheelArmed?3u:dictationTab(m)):app==App::Score?(m.scoreArmed?2u:(m.page.score.players()>2?3u:0u)+(m.page.score.fresh()?0u:1u)):app==App::Feishu?(m.feishuDetail?1u:m.page.feishu.count?0u:2u):app==App::Todo?(m.todoRinging?5u:m.listening()?3u:m.voiceBusy()?4u:m.todoArmed?2u:m.todoIndex?1u:0u):app==App::Ledger?(m.listening()?3u:m.voiceBusy()?4u:m.ledgerArmed?2u:m.ledgerIndex?1u:0u):app==App::Health?healthTab(m):app==App::Train?trainTab(m):app==App::Calc||app==App::Voice?(m.listening()?1u:m.voiceBusy()?2u:app==App::Voice&&m.voiceDropAsk?3u:0u):app==App::Walkie?(m.walkieTalk?1u:m.walkiePhase==2?2u:0u):app==App::Dictation||app==App::Status||app==App::Translate?dictationTab(m):app==App::Calendar?m.calendarView:app==App::Podcast?unsigned(m.podcastEpisodes):app==App::Radio?unsigned(m.radioList):m.soundView);
+        app==App::Alarm?(m.alarmRinging&&m.timerRang?10u:m.listening()?3u:m.voiceBusy()?4u:m.alarmEdit&&m.timerPicked()?(m.timerEnd?7u:m.timerLeft?8u:6u):m.alarmEdit?5u:m.timerPicked()?9u:m.alarmArmed?2u:m.alarmIndex?1u:0u):app==App::Memo?memoTab(m):app==App::Wheel?(m.wheelArmed?3u:dictationTab(m)):app==App::Score?(m.scoreArmed?2u:(m.page.score.players()>2?3u:0u)+(m.page.score.fresh()?0u:1u)):app==App::Feishu?(m.feishuDetail?1u:m.page.feishu.count?0u:2u):app==App::Todo?(m.todoRinging?5u:m.listening()?3u:m.voiceBusy()?4u:m.todoArmed?2u:m.todoIndex?1u:0u):app==App::Ledger?(m.listening()?3u:m.voiceBusy()?4u:m.ledgerArmed?2u:m.ledgerIndex?1u:0u):app==App::Health?healthTab(m):app==App::Train?trainTab(m):app==App::Calc||app==App::Voice?(m.listening()?1u:m.voiceBusy()?2u:app==App::Voice&&m.voiceDropAsk?3u:0u):app==App::Walkie?(m.walkieTalk?1u:m.walkiePhase==2?2u:0u):app==App::Hermes||app==App::Dictation||app==App::Status||app==App::Translate?dictationTab(m):app==App::Calendar?m.calendarView:app==App::Podcast?unsigned(m.podcastEpisodes):app==App::Radio?unsigned(m.radioList):m.soundView);
     if(app==App::Menu&&runtime.menuLayout().mode==MenuLayout::List)hint="上下：选择 | 长按上下：快移 | 确认：进入";
     char text[256];
     // 打开 Mac 程序: what the computer is doing takes the key hints' place for a few seconds, on any page.
@@ -2756,6 +2757,41 @@ void initTranslate(lv_obj_t* screen){
     translateView=lv_obj_create(translateRoot);box(translateView,8,2,224,255,kBg);lv_obj_add_event_cb(translateView,drawTranslate,LV_EVENT_DRAW_MAIN,nullptr);
 }
 void renderTranslate(const Model& m){drawModel=&m;lv_obj_invalidate(translateView);}
+// Hermes has a separate conversation on the Mac. Voice recognition never becomes XiaoZhi chat.
+lv_obj_t *hermesView;
+const char* hermesLineEnd(const char* text){
+    const char* end=wrapEnd(text,224);
+    for(const char* at=text;at<end;++at)if(*at=='\n')return at;
+    return end;
+}
+void drawHermes(lv_event_t* e){
+    const auto& m=*drawModel;const auto& h=m.page.hermes;auto p=painter(e);
+    if(m.voiceBusy()){drawListening(p,m,esp_timer_get_time()/1000000,"对 Hermes 说话","说完再按确认");return;}
+    p.text("Hermes助手",0,2,223,kAccent);
+    p.text(*m.liveState?m.liveState:"按确认开始对话",0,28,223,h.busy?kWarn:kMuted);
+    if(!*h.heard&&!*h.answer){
+        p.text("聊天 · 安排任务",0,92,223,kText,LV_TEXT_ALIGN_CENTER);
+        p.text("按确认说话，说完再按确认",0,126,223,kMuted,LV_TEXT_ALIGN_CENTER);
+        p.text(h.remote?"WiFi 远程模式":"需要连接电脑助手",0,158,223,kMuted,LV_TEXT_ALIGN_CENTER);
+        return;
+    }
+    paragraph(p,h.heard,54,2,kMuted,0,223,true);
+    p.rect(0,100,223,100,kBorder);
+    const char* s=*h.answer?h.answer:h.busy?"正在等待 Hermes 回复…":"";
+    unsigned line=0,shown=0;char text[100];
+    while(*s){
+        const char* start=s;const char* end=hermesLineEnd(s);s=*end=='\n'?end+1:end;
+        if(line++<h.scroll||shown>=6)continue;
+        fitText(text,sizeof(text),start,end-start);p.text(text,0,108+int(shown++)*21,223,kText);
+    }
+    if(h.truncated)p.text(h.remote?"长按下键：继续读取回复":"完整回复请在电脑 Hermes 查看",0,238,223,kMuted);
+}
+void initHermes(lv_obj_t* screen){
+    auto* root=lv_obj_create(screen);box(root,0,35,240,257,kBg);
+    hermesView=lv_obj_create(root);box(hermesView,8,2,224,255,kBg);
+    lv_obj_add_event_cb(hermesView,drawHermes,LV_EVENT_DRAW_MAIN,nullptr);
+}
+void renderHermes(const Model& m){drawModel=&m;lv_obj_invalidate(hermesView);}
 // 随机转盘: the mode's options as a wheel; a spin runs a highlight round it that slows to the pick, shown below.
 lv_obj_t *wheelRoot,*wheelView;
 constexpr uint32_t kWheelColors[]{0xff6b6b,0xffa94d,0xffd43b,0x69db7c,0x38d9a9,0x4dabf7,0x9775fa,0xf783ac};
@@ -3273,6 +3309,7 @@ void uiInit() {
     else if(guiApp==App::Voice)initVoice(screen);
     else if(guiApp==App::Walkie)initWalkie(screen);
     else if(guiApp==App::Dictation)initDictation(screen);
+    else if(guiApp==App::Hermes)initHermes(screen);
     else if(guiApp==App::Settings){
         // Status card (icon + main value) above a details card. Only text pages pay for it:
         // the 22 KiB pool must keep room for the pomodoro's rotated layers.
@@ -3446,6 +3483,7 @@ void uiRender(const Runtime& runtime) {
     } else if(app==App::Ledger){renderLedger(model);
     } else if(app==App::Health){renderHealth(model);
     } else if(app==App::Train){renderTrain(model);
+    } else if(app==App::Hermes){renderHermes(model);
     } else if(app==App::Calc){renderCalc(model);
     } else if(app==App::Voice){renderVoice(model);
     } else if(app==App::Walkie){renderWalkie(model);
@@ -3482,10 +3520,14 @@ void uiRender(const Runtime& runtime) {
             if(page==SettingsPage::Wifi&&!wifiList){
                 setLabel(heading,"WiFi 配置");
 #ifdef PASSPORT_DEVICE
-                if(board::provisioning()){setLabel(value,"手机连接免密码热点");setLabel(lines[0],board::apName());setLabel(lines[1],"http://192.168.8.1");setLabel(lines[2],model.wifiSetupStatus);}else
+                if(board::provisioning()){
+                    setLabel(value,*model.wifiSetupPassword?"手机连接加密配置热点":"手机连接免密码热点");setLabel(lines[0],board::apName());
+                    if(*model.wifiSetupPassword){char password[48];snprintf(password,sizeof(password),"密码 %s",model.wifiSetupPassword);setLabel(lines[1],password);setLabel(lines[2],"http://192.168.8.1");}
+                    else{setLabel(lines[1],"http://192.168.8.1");setLabel(lines[2],model.wifiSetupStatus);}
+                }else
 #endif
                 {setLabel(value,model.wifiConnected?"WiFi 已连接":"WiFi 未连接");setLabel(lines[0],runtime.settings().wifiSsid);setLabel(lines[1],"确认开启手机配网");}
-                setLabel(lines[3],"网页：WiFi·身份卡·蓝牙·收听");
+                setLabel(lines[3],*model.wifiSetupPassword?"网页：Hermes·WiFi":"网页：WiFi·身份卡·蓝牙·收听");
             }else if(page==SettingsPage::Bluetooth){
                 setLabel(heading,"蓝牙连接");
                 setLabel(value,runtime.connected()?"USB 已连接":!runtime.settings().bluetoothEnabled?"蓝牙已关闭":model.bleEncrypted?"蓝牙已连接":model.bleConnected?"正在加密配对":"等待电脑助手连接");
@@ -3572,6 +3614,9 @@ void uiAnimate(const Runtime& runtime){
     lv_timer_handler();lv_refr_now(display);trackUiMemory();
 }
 unsigned uiTextLines(const char* s,int width){unsigned n=0;while(*s){s=lineEnd(s,width);++n;}return n;}
+unsigned uiHermesLines(const char* s){
+    unsigned lines=0;while(*s){const char* end=hermesLineEnd(s);s=*end=='\n'?end+1:end;++lines;}return lines;
+}
 unsigned uiWrappedLines(const char* s){unsigned n=0;for(;;){while(*s==' ')++s;if(!*s)return n;s=wrapEnd(s,224);++n;}}
 unsigned uiMemoryFree(){return uiFree.load();}
 unsigned uiFlushPixels(){return flushPixels.load();}
